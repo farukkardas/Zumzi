@@ -18,6 +18,7 @@ namespace UI
     public class UIHandler : MonoBehaviour
     {
         public static UIHandler Instance;
+        public static Action PlayerRevived;
         [SerializeField] private GameObject pauseMenu;
         [SerializeField] private GameObject dieMenu;
         [SerializeField] private GameObject winMenu;
@@ -28,6 +29,7 @@ namespace UI
         [SerializeField] private TMP_Text buildingCount;
         [SerializeField] private TMP_Text scoreText;
         [SerializeField] private Image healthBar;
+        [SerializeField] private GameObject noConnectionPanel;
         private bool _toggle = true;
         private int _playerScore = 0;
 
@@ -44,8 +46,8 @@ namespace UI
             {
                 Instance = this;
             }
-            
-          
+
+
         }
 
         private void Start()
@@ -53,29 +55,60 @@ namespace UI
             Time.timeScale = 1;
             scoreText.text = "Score: 0";
             //AdMob implementations
-         
+
             MobileAds.Initialize(status => { });
 
             RewardsAdSubscriptions();
             RequestInterstitial();
         }
 
+
         private void OnEnable()
         {
             EnemyDie.OnDie += AddScore;
+            CheckInternetConnection.OnConnectionChanged += ControlNoConnectionPanel;
+            PlayerManager.PlayerDead += CheckPlayerStatue;
         }
 
         private void OnDisable()
         {
             EnemyDie.OnDie -= AddScore;
+            CheckInternetConnection.OnConnectionChanged -= ControlNoConnectionPanel;
+            PlayerManager.PlayerDead -= CheckPlayerStatue;
+
+        }
+
+        internal void CloseDieMenu()
+        {
+            dieMenu.SetActive(false);
+        }
+
+        private void ControlNoConnectionPanel(bool condition)
+        {
+            if (condition)
+            {
+                noConnectionPanel.SetActive(false);
+                joystickController.SetActive(true);
+                foreach (var eButton in uiButtons)
+                {
+                    eButton.SetActive(true);
+                }
+            }
+            else
+            {
+                joystickController.SetActive(false);
+                noConnectionPanel.SetActive(true);
+                foreach (var eButton in uiButtons)
+                {
+                    eButton.SetActive(false);
+                }
+            }
+
         }
 
         private void Update()
         {
             SetBuildingCount();
-            StartCoroutine(EnableDieMenu());
-            CheckPlayerStatue();
-            
         }
 
         void AddScore()
@@ -109,17 +142,22 @@ namespace UI
 
         private void HandleRewardedAdClosed(object sender, EventArgs args)
         {
-            CreateAndLoadRewardedAd();
+            // AdClosed event received.
         }
 
         private void HandleUserEarnedReward(object sender, Reward args)
         {
-            PlayerManager.Instance.health.SetCurrentHealth(100);
-            healthBar.fillAmount = 1f;
             Time.timeScale = 1f;
-            StartCoroutine(PlayerManager.Instance.AfterReviveProtection());
-        }
 
+            joystickController.SetActive(true);
+            foreach (var button in uiButtons)
+            {
+                button.SetActive(true);
+            }
+            healthBar.fillAmount = 1f;
+            PlayerRevived.Invoke();
+            dieMenu.SetActive(false);
+        }
 
         public void OpenRewardsAds()
         {
@@ -127,27 +165,6 @@ namespace UI
             {
                 _rewardedAd.Show();
             }
-        }
-
-        private void CreateAndLoadRewardedAd()
-        {
-            string adUnitId;
-#if UNITY_ANDROID
-             adUnitId = "ca-app-pub-3940256099942544/5224354917";
-#elif UNITY_IPHONE
-             //adUnitId = "ca-app-pub-3940256099942544/1712485313";
-#else
-             adUnitId = "unexpected_platform";
-#endif
-
-            _rewardedAd = new RewardedAd(adUnitId);
-
-
-            _rewardedAd.OnUserEarnedReward += HandleUserEarnedReward;
-            _rewardedAd.OnAdClosed += HandleRewardedAdClosed;
-
-            AdRequest request = new AdRequest.Builder().Build();
-            _rewardedAd.LoadAd(request);
         }
 
         #endregion
@@ -170,15 +187,15 @@ namespace UI
             // Called when the ad is closed.
             this._interstitialAd.OnAdClosed += HandleOnAdClosed;
 
-            
-        
+
+
             // Create an empty ad request.
             AdRequest request = new AdRequest.Builder().Build();
             // Load the interstitial with the request.
             this._interstitialAd.LoadAd(request);
         }
 
-       
+
 
         public void HandleOnAdFailedToLoad(object sender, AdFailedToLoadEventArgs args)
         {
@@ -265,15 +282,7 @@ namespace UI
 
         private void CheckPlayerStatue()
         {
-            if (PlayerManager.Instance.health.GetCurrentHealth() >= 1)
-            {
-                dieMenu.SetActive(false);
-                joystickController.SetActive(true);
-                foreach (var button in uiButtons)
-                {
-                    button.SetActive(true);
-                }
-            }
+            StartCoroutine(EnableDieMenu());
         }
 
         public void PlayButtonClick()
@@ -283,11 +292,8 @@ namespace UI
 
         private IEnumerator EnableDieMenu()
         {
-            if (PlayerManager.Instance.health.GetCurrentHealth() <= 0)
-            {
-                yield return new WaitForSeconds(1.5f);
-                dieMenu.SetActive(true);
-            }
+            yield return new WaitForSeconds(1.5f);
+            dieMenu.SetActive(true);
         }
 
         public void LoadNextLevel()
@@ -297,7 +303,7 @@ namespace UI
 
         public void OpenWinMenu()
         {
-            
+
             NextGameAds();
         }
 
